@@ -16,6 +16,15 @@ include_once("YTDownloaderImpl.php");
 include_once("YTDownloaderUtils.php");
 
 class YTDownloader implements YTDownloaderImpl {
+  public static function log($message) {
+    if (is_array($message)) {
+      echo date('Y-m-d H:i:s') . ": ";
+      print_r($message);
+      echo PHP_EOL;
+    } else {
+      echo date('Y-m-d H:i:s') . ": " . $message . PHP_EOL;
+    }
+  }
   /**
    * Class constructor method
    * @param null $str
@@ -293,11 +302,15 @@ class YTDownloader implements YTDownloaderImpl {
           );
         }
       } else {
-        throw new Exception("Cannot download video file from Youtube.");
+        $this->log("Cannot download video file from Youtube.");
+        return false;
+//        throw new Exception("Cannot download video file from Youtube.");
 //        exit();
       }
     } else {
-      throw new Exception("Cannot locate your Ffmpeg installation?! Thus, cannot convert the video.");
+      $this->log("Cannot locate your Ffmpeg installation?! Thus, cannot convert the video.");
+      return false;
+//      throw new Exception("Cannot locate your Ffmpeg installation?! Thus, cannot convert the video.");
 //      exit();
     }
   }
