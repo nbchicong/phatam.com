@@ -263,7 +263,6 @@ class ProcessMp3Command extends CConsoleCommand {
 //        $this->log("---- Tag info ARTIST: ".$tagData->Artist);
 //        $this->log("---- Tag info COMMENT: ".$tagData->Comment);
 //        $this->log("---- Tag info COVER URL: ".$coverUrl);
-        $this->downloadVideo($video->yt_id, $coverUrl, $tagData, $folder, $video->category);
         $mp3File = $this->processVideo($video->url_flv, $coverUrl, $tagData, $folder, $video->category);
         if (!$mp3File) {
           $this->log("---- Download MP3 ".$tagData->Title." Fail!");
@@ -293,21 +292,135 @@ class ProcessMp3Command extends CConsoleCommand {
   }
 
   public function downloadVideo($ytId, $coverUrl, $tagsData, $folder, $category) {
+    $this->log("---- Start Convert Video ${ytId} to MP3");
     if (empty($ytId)) {
-      $this->log("Youtube Id is not null");
+      $this->log("---- Youtube Id is not null");
       return false;
     }
     $videoLink = sprintf('https://www.youtube.com/watch?v=%s', $ytId);
+    $crawInfo = isset(Yii::app()->params['prefixmp3'][$category]) ? Yii::app()->params['prefixmp3'][$category] : array('file' => '/var/www/phatammp3/prefixmp3/sachnoi.mp3', 'bitrate' => '320K');
+    $processInfo = array('url' => $videoLink, 'timeDownloadMp3' => 0, 'timeDownloadImage' => 0, 'timeMerge' => 0, 'timeWriteTag' => 0, 'imageAttach' => $coverUrl, 'fileMp3' => $tagsData->FileName);
+    $startTime = time();
+
+    $prefixFile = $crawInfo['file'];
+    $mp3Engine = new MP3Process();
+    /**
+     * Download file mp3
+     */
     try {
+      $this->log("-- Start Init Tool");
       $converter = new YTDownloader($videoLink);
       $converter->setAudioFormat('mp3');
       $converter->setFfmpegLogsActive(false);
       $converter->setDeleteVideo(true);
-      $this->log($converter->downloadAudio());
+      $response = $converter->downloadAudio();
+      $this->log($response);
+      $videoFile = new DownloadFile($converter->getDownloadsDir().$converter->getVideo());
+      $mp3File = new DownloadFile($response['audioPath']);
+      $this->log("------ Checking duration mp3 file converted ". $mp3File->getDurationEstimate() ." and compare with video duration ".$videoFile->getDurationEstimate());
+      if ($mp3File->getDurationEstimate() < $videoFile->getDurationEstimate()) {
+        $this->log("------ Download mp3 form video: " . $videoLink . " fail!");
+        return false;
+      }
+      if ($response == false) {
+        $this->log("------ Download mp3 form video: " . $videoLink . " fail!");
+        return false;
+      }
+      $mp3TmpPath = $response['audioPath'];
+      $this->log("------ Download MP3 Response ".$mp3TmpPath);
+      $processInfo['timeDownloadMp3'] = time() - $startTime;
+
+      /**
+       * Download file img
+       */
+      $responseImg = $converter->getVideoThumb();
+      if ($responseImg == false) {
+        $this->log("------ Download Image: " . $coverUrl . " fail!");
+        return false;
+      }
+      $startTime = time();
+
+      $this->log("------ MP3 Response file size: ". FileUtils::getSize($mp3TmpPath));
+      if (FileUtils::getSize($mp3TmpPath) > 0) {
+        /**
+         * Process merge file mp3
+         */
+        $desFile = $folder . '/' . $tagsData->FileName;
+        $fileIns = array($prefixFile, $mp3TmpPath);
+        $this->log("------ Merge MP3 with prefix");
+        if ($mp3Engine->CombineMultipleMP3sTo($desFile, $fileIns)) {
+          //Delete file download
+          unlink($mp3TmpPath);
+          $processInfo[ 'timeMerge' ] = time() - $startTime;
+          $startTime = time();
+
+          /**
+           * Process write IDTag to mp3
+           */
+          if (FileUtils::getSize($responseImg) > 0) {
+            if ($tagsData->loadAttachedPicture($coverUrl)) {
+              $processInfo[ 'attachImage' ] = 'success';
+            } else {
+              $processInfo[ 'attachImage' ] = 'false';
+            }
+          }
+          if ($mp3Engine->WrigeIDTag($desFile, $tagsData)) {
+            //Delete file image
+            if (FileUtils::getSize($responseImg) > 0) {
+              //                        unlink($responseImg->filePath);
+            }
+            $processInfo[ 'writeTag' ] = 'success';
+            $processInfo[ 'timeWriteTag' ] = time() - $startTime;
+            $this->log(json_encode($processInfo));
+            return $tagsData->FileName;
+          } else {
+            $processInfo[ 'writeTag' ] = 'fail';
+            $processInfo[ 'timeWriteTag' ] = time() - $startTime;
+          }
+          $this->log("------ Merge MP3 with prefix: DONE");
+        } else {
+          $processInfo[ 'merge' ] = 'fail';
+        }
+      } else {
+        $processInfo[ 'downloadmp3' ] = 'fail';
+      }
+      $this->log(json_encode($processInfo));
       return false;
     } catch (Exception $e) {
-      $this->log("Convert to MP3 Failed");
+      $this->log("------ Convert to MP3 Failed: ".$e->getMessage());
       return false;
+    }
+  }
+
+  public function actionTestConverter() {
+    $folderMp3 = Yii::app()->params['foldermp3'];
+    $criteria = new CDbCriteria();
+    $criteria->addInCondition('yt_id', array('VRCmoV5crr0'));
+    $videos = PmVideos::model()->findAll($criteria);
+    $this->log("video found: " . count($videos));
+    foreach ($videos as $video) {
+      if (empty($video->audio)) {
+        $this->log("-- Video not has audio");
+        $this->log("-- Creating audio for this video");
+        $artistName = $video->artist;
+        $artistFolder = CVietnameseTools::makeName($artistName);
+        $folder = $folderMp3 . $artistFolder;
+        $this->log("-- Folder path: ${folder}");
+        if (!file_exists($folder)) {
+          $this->log("-- Artist folder not found, creating artist folder");
+          mkdir($folder, 0755);
+        }
+        $this->log("-- Process Single Video");
+        $tagData = new IDTagInfo();
+        $tagData->Title = $video->video_title . '_wWw.PhatAm.com';
+        $tagData->FileName = CVietnameseTools::makeMp3Name($video->video_title) . '_' . CVietnameseTools::makeName($video->artist) . '_wWw.PhatAm.com.mp3';
+        $tagData->Album = $video->artist;
+        $tagData->Artist = $video->artist;
+        $tagData->Comment = $video->description;
+        $coverUrl = $video->getCoverUrl();
+        $this->log("---- Tag info TITLE: ".$tagData->Title);
+        $this->downloadVideo($video->yt_id, $coverUrl, $tagData, $folder, $video->category);
+      }
     }
   }
 

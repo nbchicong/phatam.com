@@ -35,11 +35,9 @@ class YTDownloader implements YTDownloaderImpl {
   public function __construct($str = NULL, $instant = FALSE, $out = NULL) {
     if (!function_exists('curl_init')) {
       throw new Exception('Script requires the PHP CURL extension.');
-      exit(0);
     }
     if (!function_exists('json_decode')) {
       throw new Exception('Script requires the PHP JSON extension.');
-      exit(0);
     }
     ini_set('max_execution_time', 0);
     ini_set('memory_limit', '64M');
@@ -120,7 +118,6 @@ class YTDownloader implements YTDownloaderImpl {
     $id = self::getVideoId();
     if ($id === FALSE) {
       throw new Exception("Missing video id. Use set_youtube() and try again.");
-      exit();
     } else {
       $videoInfo = self::getYTInfo();
       $videoData = self::getVideoData($videoInfo);
@@ -163,8 +160,9 @@ class YTDownloader implements YTDownloaderImpl {
   public function downloadVideo($idx = NULL) {
     $idx = ($idx !== NULL) ? $idx : 0;
     $id = self::getVideoId();
+    $this->log('---- Start Download Video '.$id);
     if ($id === FALSE) {
-      throw new Exception("Missing video id. Use setYoutube() and try again.");
+      throw new Exception("---- Missing video id. Use setYoutube() and try again.");
 //      exit();
     } else {
       $ytUrlMap = self::getYTUrlMap();
@@ -175,8 +173,7 @@ class YTDownloader implements YTDownloaderImpl {
         $videos = $ytUrlMap;
       }
       if (!is_array($videos)) {
-        throw new Exception("Grabbing original file location(s) failed. $videos");
-        exit();
+        throw new Exception("---- Grabbing original file location(s) failed. $videos");
       } else {
         if (is_array($videos[$idx])) {
           $videos = $videos[$idx];
