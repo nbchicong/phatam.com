@@ -278,6 +278,7 @@ class YTDownloader implements YTDownloaderImpl {
             return array(
                 'title' => self::getAudio(),
                 'audioPath' => $ffmpegOutputFile,
+                'videoPath' => $ffmpegInputFile,
                 'quality' => $ab
             );
           } else {
@@ -295,6 +296,7 @@ class YTDownloader implements YTDownloaderImpl {
           return array(
               'title' => self::getAudio(),
               'audioPath' => $ffmpegOutputFile,
+              'videoPath' => $ffmpegInputFile,
               'quality' => self::getAudioQuality() . "k"
           );
         }

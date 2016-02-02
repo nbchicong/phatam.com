@@ -146,7 +146,9 @@ class ProcessMp3Command extends CConsoleCommand {
     if ($video->pmArtist == null || empty($video->pmArtist->avatar)) {
       $useYtThumb = true;
     }
-    $mp3File = $this->processVideo($video->videoUrl->direct, $coverUrl, $tagData, $folderMp3, $video->category);
+    $ytUrlArr = explode('?v=', $video->videoUrl->direct);
+    $this->log("---- Video has episodes with ID: ".$ytUrlArr[1]);
+    $mp3File = $this->downloadVideo($ytUrlArr[1], $coverUrl, $tagData, $folderMp3, $video->category);
     if (!$mp3File) {
       $this->log("---- Process " . $video->video_title . ' 1 fail!!');
     } else {
@@ -169,7 +171,7 @@ class ProcessMp3Command extends CConsoleCommand {
       if ($useYtThumb) {
         $coverEpisodeUrl = $episode->yt_thumb;
       }
-      $mp3File = $this->processVideo($episode->direct, $coverEpisodeUrl, $tagEpisodeData, $folderMp3, $video->category);
+      $mp3File = $this->downloadVideo($episode->yt_id, $coverEpisodeUrl, $tagEpisodeData, $folderMp3, $video->category);
       if (!$mp3File) {
         $this->log("---- Process episode" . $tagEpisodeData->Title . ' fail!!');
       } else {
@@ -263,7 +265,7 @@ class ProcessMp3Command extends CConsoleCommand {
 //        $this->log("---- Tag info ARTIST: ".$tagData->Artist);
 //        $this->log("---- Tag info COMMENT: ".$tagData->Comment);
 //        $this->log("---- Tag info COVER URL: ".$coverUrl);
-        $mp3File = $this->processVideo($video->url_flv, $coverUrl, $tagData, $folder, $video->category);
+        $mp3File = $this->downloadVideo($video->yt_id, $coverUrl, $tagData, $folder, $video->category);
         if (!$mp3File) {
           $this->log("---- Download MP3 ".$tagData->Title." Fail!");
           $videoFail++;
@@ -281,14 +283,41 @@ class ProcessMp3Command extends CConsoleCommand {
 
       }
       $this->log("************* END PROCESS VIDEO **************");
-      if ($count == 0) {
-        break;
-      }
+//      if ($count == 0) {
+//        break;
+//      }
       $count = $count + 1;
     }
     $this->log("END >>> Total process: " . count($videos));
     $this->log("END >>> Load mp3 for video success - " . $videoSuccess . '|fail - ' . $videoFail);
     unlink($lockFile);
+  }
+
+  /**
+   * @param string $fileOut Path file out
+   * @param array $fileIn Array path file in
+   * @return string Path file out
+   */
+  public function mergeFile($fileOut, $fileIn) {
+    $fileInputStr = '';
+    $fileComplexStr = '';
+    $countInput = count($fileIn);
+    $count = 0;
+    foreach ($fileIn as $file) {
+      if (!is_readable($file)) {
+        $this->log('Cannot read '.$file);
+        return false;
+      }
+      $fileInputStr .= ' -i '.$file;
+      $fileComplexStr .= '['.$count++.':0]';
+    }
+    if ($fileInputStr != '' && $countInput>=2) {
+      $sh = "./ffmpeg $fileInputStr -filter_complex '".$fileComplexStr."concat=n=$countInput:v=0:a=1[out]' -map '[out]' $fileOut";
+//      $sh = './ffmpeg'. $fileInputStr .' -filter_complex amix=inputs='. $countInput .':duration=first:dropout_transition=3 '.$fileOut;
+      $this->log($sh);
+      exec($sh);
+    }
+    return true;
   }
 
   public function downloadVideo($ytId, $coverUrl, $tagsData, $folder, $category) {
@@ -305,28 +334,29 @@ class ProcessMp3Command extends CConsoleCommand {
     $prefixFile = $crawInfo['file'];
     $mp3Engine = new MP3Process();
     /**
-     * Download file mp3
+     * Download video file and convert to mp3
      */
     try {
       $this->log("-- Start Init Tool");
       $converter = new YTDownloader($videoLink);
       $converter->setAudioFormat('mp3');
       $converter->setFfmpegLogsActive(false);
-      $converter->setDeleteVideo(true);
+      $converter->setDeleteVideo(false);
       $response = $converter->downloadAudio();
-      $this->log($response);
-      $videoFile = new DownloadFile($converter->getDownloadsDir().$converter->getVideo());
+//      $this->log($response);
+      $videoFile = new DownloadFile($response['videoPath']);
       $mp3File = new DownloadFile($response['audioPath']);
       $this->log("------ Checking duration mp3 file converted ". $mp3File->getDurationEstimate() ." and compare with video duration ".$videoFile->getDurationEstimate());
-      if ($mp3File->getDurationEstimate() < $videoFile->getDurationEstimate()) {
-        $this->log("------ Download mp3 form video: " . $videoLink . " fail!");
-        return false;
-      }
+//      if ($mp3File->getDurationEstimate() < $videoFile->getDurationEstimate()) {
+//        $this->log("------ Download mp3 form video: " . $videoLink . " fail!");
+//        return false;
+//      }
       if ($response == false) {
         $this->log("------ Download mp3 form video: " . $videoLink . " fail!");
         return false;
       }
       $mp3TmpPath = $response['audioPath'];
+      $videoTmpPath = $response['videoPath'];
       $this->log("------ Download MP3 Response ".$mp3TmpPath);
       $processInfo['timeDownloadMp3'] = time() - $startTime;
 
@@ -348,7 +378,7 @@ class ProcessMp3Command extends CConsoleCommand {
         $desFile = $folder . '/' . $tagsData->FileName;
         $fileIns = array($prefixFile, $mp3TmpPath);
         $this->log("------ Merge MP3 with prefix");
-        if ($mp3Engine->CombineMultipleMP3sTo($desFile, $fileIns)) {
+        if ($this->mergeFile($desFile, $fileIns)) {
           //Delete file download
           unlink($mp3TmpPath);
           $processInfo[ 'timeMerge' ] = time() - $startTime;
@@ -357,8 +387,12 @@ class ProcessMp3Command extends CConsoleCommand {
           /**
            * Process write IDTag to mp3
            */
-          if (FileUtils::getSize($responseImg) > 0) {
-            if ($tagsData->loadAttachedPicture($coverUrl)) {
+          $this->log("Image response ". $responseImg);
+          $imageThumb = $converter->getDownloadsDir().$converter->getThumb();
+          $this->log("Image Thumbs file size ". FileUtils::getSize($imageThumb));
+          if (FileUtils::getSize($imageThumb) > 0) {
+            $this->log("load attach image ". $tagsData->loadAttachedPicture($imageThumb));
+            if ($tagsData->loadAttachedPicture($imageThumb)) {
               $processInfo[ 'attachImage' ] = 'success';
             } else {
               $processInfo[ 'attachImage' ] = 'false';
@@ -366,12 +400,13 @@ class ProcessMp3Command extends CConsoleCommand {
           }
           if ($mp3Engine->WrigeIDTag($desFile, $tagsData)) {
             //Delete file image
-            if (FileUtils::getSize($responseImg) > 0) {
-              //                        unlink($responseImg->filePath);
+            if (FileUtils::getSize($imageThumb) > 0) {
+              unlink($imageThumb);
             }
             $processInfo[ 'writeTag' ] = 'success';
             $processInfo[ 'timeWriteTag' ] = time() - $startTime;
             $this->log(json_encode($processInfo));
+            unlink($videoTmpPath);
             return $tagsData->FileName;
           } else {
             $processInfo[ 'writeTag' ] = 'fail';
