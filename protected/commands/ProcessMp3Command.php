@@ -129,6 +129,7 @@ class ProcessMp3Command extends CConsoleCommand {
    */
   public function processEpisode($video, $episodes, $folderMp3) {
     $this->log("-- Running process EPISODE");
+    $this->log(`ls`);
     $basUrl = Yii::app()->params[ 'baseUrl' ];
     $audioInfo = array();
     $useYtThumb = false;
@@ -179,6 +180,9 @@ class ProcessMp3Command extends CConsoleCommand {
       }
       $i++;
     }
+    $this->log("-- END process EPISODE");
+    $this->log("-- Audio Info of Video has EPISODE");
+    $this->log($audioInfo);
     return $audioInfo;
   }
 
@@ -282,7 +286,7 @@ class ProcessMp3Command extends CConsoleCommand {
         }
 
       }
-      $this->log("************* END PROCESS VIDEO **************");
+      $this->log("************ END PROCESS VIDEO ************");
 //      if ($count == 0) {
 //        break;
 //      }
@@ -344,9 +348,9 @@ class ProcessMp3Command extends CConsoleCommand {
       $converter->setDeleteVideo(false);
       $response = $converter->downloadAudio();
 //      $this->log($response);
-      $videoFile = new DownloadFile($response['videoPath']);
-      $mp3File = new DownloadFile($response['audioPath']);
-      $this->log("------ Checking duration mp3 file converted ". $mp3File->getDurationEstimate() ." and compare with video duration ".$videoFile->getDurationEstimate());
+//      $videoFile = new DownloadFile($response['videoPath']);
+//      $mp3File = new DownloadFile($response['audioPath']);
+//      $this->log("------ Checking duration mp3 file converted ". $mp3File->getDurationEstimate() ." and compare with video duration ".$videoFile->getDurationEstimate());
 //      if ($mp3File->getDurationEstimate() < $videoFile->getDurationEstimate()) {
 //        $this->log("------ Download mp3 form video: " . $videoLink . " fail!");
 //        return false;
@@ -430,7 +434,7 @@ class ProcessMp3Command extends CConsoleCommand {
   public function actionTestConverter() {
     $folderMp3 = Yii::app()->params['foldermp3'];
     $criteria = new CDbCriteria();
-    $criteria->addInCondition('yt_id', array('VRCmoV5crr0'));
+    $criteria->addInCondition('yt_id', array('JA9eP5G1PTo'));
     $videos = PmVideos::model()->findAll($criteria);
     $this->log("video found: " . count($videos));
     foreach ($videos as $video) {
